@@ -22,6 +22,28 @@ from .strategies import STRATEGIES, Strategy
 UTC = timezone.utc
 
 
+TICK_DELAY_S = 20        # vent så længe efter hver lysafslutning, så det nye lys er hos datakilden
+
+
+def tick_slot(now: datetime, last_slot: datetime | None) -> datetime | None:
+    """Tidsrummet (rundet ned til TICK_EVERY_MIN) hvis det er tid til en ny scanning, ellers None.
+
+    Måler tid siden tidsrummets start og ikke sekundviseren. Før kiggede løkken kun på `now.second >= 20`, og da den
+    sov præcis et minut ad gangen, vågnede den altid på samme sekund, som den var startet på. Startede den på sekund
+    0-19, scannede den aldrig."""
+    slot = now.replace(second=0, microsecond=0)
+    slot -= timedelta(minutes=slot.minute % config.TICK_EVERY_MIN)
+    return slot if slot != last_slot and (now - slot).total_seconds() >= TICK_DELAY_S else None
+
+
+def sleep_seconds(now: datetime, last_slot: datetime | None) -> float:
+    """Sov til næste scanning (højst LOOP_SECONDS), så runderne rammer lige efter hver lysafslutning."""
+    slot = now.replace(second=0, microsecond=0)
+    slot -= timedelta(minutes=slot.minute % config.TICK_EVERY_MIN)
+    due = slot + timedelta(seconds=TICK_DELAY_S) if slot != last_slot else slot + timedelta(minutes=config.TICK_EVERY_MIN, seconds=TICK_DELAY_S)
+    return max(1.0, min(float(config.LOOP_SECONDS), (due - now).total_seconds()))
+
+
 class Desk:
     def __init__(self, md, news, logger, state_path: Path | None = config.STATE_PATH,
                  notifier=None, strategies=STRATEGIES, seed: int = 0, live: bool = True):
@@ -244,9 +266,8 @@ class Desk:
                     self.save(now)
                     _time.sleep(config.CLOSED_SLEEP_S)
                     continue
-                slot = now.replace(second=0, microsecond=0)
-                slot -= timedelta(minutes=slot.minute % config.TICK_EVERY_MIN)
-                if slot != last_slot and now.second >= 20:
+                slot = tick_slot(now, last_slot)
+                if slot is not None:
                     self.tick(now)
                     last_slot = slot
                     fails = fails + 1 if self.md.errors else 0
@@ -258,4 +279,4 @@ class Desk:
                 self.log.commit()
                 if fails == config.NTFY_ERROR_AFTER:
                     self.notify("Fejl i desk", str(e)[:300], priority="high", tags="rotating_light")
-            _time.sleep(config.LOOP_SECONDS if market.is_market_open(now) else config.CLOSED_SLEEP_S)
+            _time.sleep(sleep_seconds(datetime.now(UTC), last_slot) if market.is_market_open(now) else config.CLOSED_SLEEP_S)

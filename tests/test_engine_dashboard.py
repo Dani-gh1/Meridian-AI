@@ -15,6 +15,28 @@ from desk.notify import Notifier
 from tests.helpers import utc
 
 
+def isolate_data():
+    """Peg botens datastier på en midlertidig mappe. Testene må aldrig røre den rigtige database og tilstandsfil
+    (de blev før slettet og fyldt med syntetiske handler, hvis testene kørtes i en kørende bots mappe)."""
+    import tempfile
+    from pathlib import Path
+    from unittest import mock
+    tmp = tempfile.TemporaryDirectory()
+    d = Path(tmp.name)
+    patches = [mock.patch.object(config, "DATA_DIR", d)] + [
+        mock.patch.object(config, name, d / fname) for name, fname in (
+            ("DB_PATH", "desk.sqlite3"), ("STATE_PATH", "state.json"),
+            ("NEWS_CACHE_PATH", "news_cache.json"), ("BACKTEST_DB_PATH", "backtest.sqlite3"))]
+    for pa in patches:
+        pa.start()
+
+    def undo():
+        for pa in patches:
+            pa.stop()
+        tmp.cleanup()
+    return undo
+
+
 def run_desk(days=3, state_path=None, db=None):
     end = utc(2026, 11, 18, 15)
     start = end - timedelta(days=days)
@@ -34,6 +56,7 @@ def run_desk(days=3, state_path=None, db=None):
 class EngineTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls.addClassCleanup(isolate_data())
         config.DATA_DIR.mkdir(parents=True, exist_ok=True)
         for f in (config.STATE_PATH, config.DB_PATH):
             f.unlink(missing_ok=True)
@@ -108,6 +131,7 @@ class StateTest(unittest.TestCase):
 class DashboardTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls.addClassCleanup(isolate_data())
         if not config.STATE_PATH.exists():
             run_desk(days=2, state_path=config.STATE_PATH)
         from desk.dashboard import make_server
