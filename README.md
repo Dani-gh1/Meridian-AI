@@ -16,12 +16,13 @@ eller en nøgle, der kun kan læse data.
 cd desk
 python3 -m unittest discover -s tests -t .      # 58 tests
 python3 -m desk backtest --days 90              # skriver docs/backtest.md
-export OANDA_TOKEN=...                          # practice-token fra OANDA
+export OANDA_TOKEN=...                          # valgfri: practice-token fra OANDA (rigtig bid/ask). Uden den bruges Yahoo Finance
 python3 -m desk check                           # test datakilden
 python3 -m desk run                             # bot + dashboard (http://<host>:8787)
 ```
 
-Uden nøgle kan du prøve det hele med `DESK_PROVIDER=synthetic python3 -m desk run` (syntetiske data).
+Uden nøgle bruger botten Yahoo Finance (`DESK_PROVIDER=auto`: OANDA hvis `OANDA_TOKEN` er sat, ellers Twelve Data hvis `TWELVEDATA_KEY` er sat, ellers Yahoo).
+Vil du prøve det hele uden internet, brug `DESK_PROVIDER=synthetic python3 -m desk run` (syntetiske data).
 
 ## Arkitektur: seks agenter med hårde overdragelser
 
@@ -52,6 +53,7 @@ Alle tærskler ligger i **`desk/config.py`** og vises også under fanen *Regler*
 ### Data
 | Kilde | Pris | Bemærkning |
 |---|---|---|
+| **Yahoo Finance** (`yahoo`, standard uden nøgle) | ingen nøgle | Uofficielt, men åbent endpoint (kun GET). Første gang ca. 2 måneders 15-minutters lys, derefter det seneste døgn. Ingen bid/ask, så spreaden modelleres. Guld, sølv og olie er futures-priser. Botten scanner altså altid, også uden opsætning. |
 | **OANDA practice** (`oanda`, anbefalet) | gratis demokonto | Bruger kun `GET /v3/instruments/{x}/candles` med `price=MBA`, som giver rigtig bid/ask og dermed rigtig spread. |
 | Twelve Data (`twelvedata`) | gratis 800 kald/dag | Henter kun M15 og bygger selv H1/H4. Spread modelleres. 14 instrumenter hvert 5. min er for mange kald til gratisplanen, så hæv `REFRESH_S["M15"]` eller skær ned på `INSTRUMENTS`. |
 | Alpha Vantage | 25 kald/dag gratis | Ikke implementeret, fordi kvoten er for lille til intradag-data. |

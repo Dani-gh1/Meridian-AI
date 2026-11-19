@@ -1,4 +1,4 @@
-"""Markedsdata: datakilder (OANDA practice, Twelve Data, syntetisk) og cache.
+"""Markedsdata: datakilder (OANDA practice, Twelve Data, Yahoo Finance, syntetisk) og cache.
 
 Sikkerhed: HTTP-klienten kan KUN lave GET-kald. Der findes ingen kode der opretter ordrer.
 """
@@ -128,6 +128,66 @@ class TwelveDataProvider:
         return out, Quote(symbol, now, last - sp / 2, last + sp / 2)
 
 
+class YahooProvider:
+    """Yahoo Finance: kræver ingen nøgle, så botten kan scanne markedet uden opsætning.
+
+    Uofficielt, men åbent endpoint (kun GET). Henter 15-minutters lys, første gang ca. to måneders historik (nok
+    til H4-indikatorerne) og derefter kun det seneste døgn, som flettes ind. H1/H4 bygges af M15. Yahoo giver ingen
+    bid/ask, så spreaden modelleres som hos Twelve Data. Volumen bruges ikke af strategierne.
+    """
+    name = "yahoo"
+    native = ("M15",)
+    KEEP = 6000
+    HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; paper-desk)", "Accept": "application/json"}
+
+    def __init__(self, base_url: str = None):
+        self.base = (base_url or config.YAHOO_BASE_URL).rstrip("/")
+        self._hist: dict = {}       # symbol -> {unix-tid: Candle}
+        self._seeded: set = set()
+
+    @staticmethod
+    def parse(data: dict) -> list:
+        chart = data.get("chart") or {}
+        res = (chart.get("result") or [None])[0]
+        if not res:
+            raise DataError(f"Yahoo: {chart.get('error') or 'ingen data'}")
+        ts = res.get("timestamp") or []
+        q = ((res.get("indicators") or {}).get("quote") or [{}])[0]
+        cols = [q.get(k) or [None] * len(ts) for k in ("open", "high", "low", "close", "volume")]
+        out = []
+        for i, t in enumerate(ts):
+            o, h, l, c, v = (col[i] if i < len(col) else None for col in cols)
+            if None in (o, h, l, c):             # Yahoo har huller (None) uden for handelstid
+                continue
+            out.append(Candle(datetime.fromtimestamp(t, UTC), float(o), float(h), float(l), float(c), float(v or 0)))
+        return out
+
+    def candles(self, symbol: str, tf: str, count: int, now: datetime):
+        sym = config.YAHOO_SYMBOLS.get(symbol)
+        if not sym:
+            raise DataError(f"Yahoo: ukendt symbol {symbol}")
+        params = {"interval": "15m", "includePrePost": "false"}
+        if symbol not in self._seeded:
+            end = int(now.timestamp())
+            params.update(period1=end - config.YAHOO_HISTORY_DAYS * 86400, period2=end + 3600)
+        else:
+            params["range"] = "1d"
+        data = http_get_json(f"{self.base}/v8/finance/chart/{urllib.parse.quote(sym)}?{urllib.parse.urlencode(params)}",
+                             self.HEADERS)
+        hist = self._hist.setdefault(symbol, {})
+        for c in self.parse(data):
+            hist[int(c.time.timestamp())] = c
+        self._seeded.add(symbol)
+        for k in sorted(hist)[:-self.KEEP]:
+            del hist[k]
+        out = closed_only([hist[k] for k in sorted(hist)], "M15", now)
+        if not out:
+            return out, None
+        sp = model_spread(symbol, now)
+        last = out[-1].close
+        return out, Quote(symbol, now, last - sp / 2, last + sp / 2)
+
+
 # ---------------------------------------------------------------- markedsdata-lag
 class LiveMarketData:
     """Cacher lys pr. tidsramme og henter kun igen efter config.REFRESH_S."""
@@ -205,6 +265,14 @@ class ReplayMarketData:
 
 def make_provider(name: str = None):
     name = name or config.DATA_PROVIDER
+    if name == "auto":      # den bedste kilde, der er adgang til; Yahoo kræver ingen nøgle
+        if config.OANDA_TOKEN:
+            return OandaProvider()
+        if config.TWELVEDATA_KEY:
+            return TwelveDataProvider()
+        return YahooProvider()
+    if name == "yahoo":
+        return YahooProvider()
     if name == "oanda":
         return OandaProvider()
     if name == "twelvedata":

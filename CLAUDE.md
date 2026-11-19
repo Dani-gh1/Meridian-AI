@@ -16,7 +16,8 @@
 ```bash
 python3 -m unittest discover -s tests -t .     # alle tests (~6 s)
 python3 -m desk backtest --days 30             # hurtig backtest (~30 s); 90 dage ≈ 2 min
-DESK_PROVIDER=synthetic DESK_DATA_DIR=/tmp/d python3 -m desk run   # lokal demo uden nøgle
+DESK_PROVIDER=synthetic DESK_DATA_DIR=/tmp/d python3 -m desk run   # lokal demo uden internet
+# Standard er DESK_PROVIDER=auto: OANDA (hvis OANDA_TOKEN), ellers Twelve Data, ellers Yahoo Finance (ingen nøgle, scanner altid)
 python3 -m desk status | epoch | check | dashboard
 ```
 Testene sætter `DESK_DATA_DIR` til en midlertidig mappe (`tests/__init__.py`). Kør dem aldrig mod `var/`.

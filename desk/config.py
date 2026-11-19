@@ -17,11 +17,15 @@ NEWS_CACHE_PATH = DATA_DIR / "news_cache.json"
 
 # ---------------------------------------------------------------- datakilde
 # "oanda" (practice/demo, anbefalet), "twelvedata", "synthetic" (kun test/demo)
-DATA_PROVIDER = os.environ.get("DESK_PROVIDER", "oanda")
+# "auto" vælger selv: OANDA hvis OANDA_TOKEN er sat, ellers Twelve Data hvis TWELVEDATA_KEY er sat, ellers Yahoo
+# Finance (kræver ingen nøgle, så botten altid kan scanne markedet).
+DATA_PROVIDER = os.environ.get("DESK_PROVIDER", "auto")
 OANDA_TOKEN = os.environ.get("OANDA_TOKEN", "")  # practice-token; kun GET-kald bruges
 OANDA_BASE_URL = os.environ.get("OANDA_BASE_URL", "https://api-fxpractice.oanda.com")
 TWELVEDATA_KEY = os.environ.get("TWELVEDATA_KEY", "")
 TWELVEDATA_BASE_URL = "https://api.twelvedata.com"
+YAHOO_BASE_URL = os.environ.get("YAHOO_BASE_URL", "https://query1.finance.yahoo.com")
+YAHOO_HISTORY_DAYS = 58          # 15-minutters lys kan hentes højst ca. 60 dage tilbage
 HTTP_TIMEOUT_S = 20
 # Hvor ofte hver tidsramme hentes igen (sekunder). Spar kald hos Twelve Data.
 REFRESH_S = {"M15": 300, "H1": 900, "H4": 3600}
@@ -59,6 +63,13 @@ INSTRUMENTS = {
     "XAG_USD": ("metal", 0.001, 25.0, 10),  # 0.025 USD
     "WTICO_USD": ("energy", 0.01, 3.0, 10),  # 0.03 USD
     "BCO_USD": ("energy", 0.01, 3.0, 10),
+}
+# Symbolnavne hos Yahoo Finance. Guld, sølv og olie er futures-priser (nærmeste kontrakt), ikke spot.
+YAHOO_SYMBOLS = {
+    "EUR_USD": "EURUSD=X", "GBP_USD": "GBPUSD=X", "USD_JPY": "USDJPY=X", "USD_CHF": "USDCHF=X",
+    "AUD_USD": "AUDUSD=X", "USD_CAD": "USDCAD=X", "NZD_USD": "NZDUSD=X", "EUR_GBP": "EURGBP=X",
+    "EUR_JPY": "EURJPY=X", "GBP_JPY": "GBPJPY=X",
+    "XAU_USD": "GC=F", "XAG_USD": "SI=F", "WTICO_USD": "CL=F", "BCO_USD": "BZ=F",
 }
 # Symbolnavne hos Twelve Data
 TWELVEDATA_SYMBOLS = {
